@@ -19,6 +19,7 @@ export default function DashboardScreen() {
 		totalInvited: 0,
 		totalConfirmed: 0,
 		totalPending: 0,
+		receptionConfirmed: 0,
 		wishlistClaimed: 0,
 		wishlistTotal: 0,
 		checklistDone: 0,
@@ -47,7 +48,9 @@ export default function DashboardScreen() {
 
 		const { data: guests } = await supabase
 			.from("guests")
-			.select("party_size, rsvp_status");
+			.select(
+				"party_size, rsvp_status, reception_invited, reception_attending",
+			);
 		const totalInvited = (guests ?? []).reduce(
 			(sum, g) => sum + g.party_size,
 			0,
@@ -57,6 +60,14 @@ export default function DashboardScreen() {
 			.reduce((sum, g) => sum + g.party_size, 0);
 		const totalPending = (guests ?? [])
 			.filter((g) => g.rsvp_status === "pending")
+			.reduce((sum, g) => sum + g.party_size, 0);
+		const receptionConfirmed = (guests ?? [])
+			.filter(
+				(g) =>
+					g.reception_invited &&
+					g.rsvp_status === "yes" &&
+					g.reception_attending,
+			)
 			.reduce((sum, g) => sum + g.party_size, 0);
 
 		const { data: wishlistItems } = await supabase
@@ -102,6 +113,7 @@ export default function DashboardScreen() {
 			totalInvited,
 			totalConfirmed,
 			totalPending,
+			receptionConfirmed,
 			wishlistClaimed,
 			wishlistTotal,
 			checklistDone,
@@ -158,6 +170,12 @@ export default function DashboardScreen() {
 					label="Awaiting reply"
 					value={stats.totalPending}
 					color="#8B7355"
+					href="/(drawer)/guests"
+				/>
+				<StatCard
+					label="Reception confirmed"
+					value={stats.receptionConfirmed}
+					color="#4A5D45"
 					href="/(drawer)/guests"
 				/>
 			</View>

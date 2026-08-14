@@ -163,7 +163,7 @@ export default function BudgetScreen() {
       {isEditor && showAddForm && (
         <View style={styles.formBox}>
           <Text style={styles.editLabel}>Category</Text>
-          <TextInput style={styles.editInput} value={newCategory} onChangeText={setNewCategory} placeholder="e.g. Venue" />
+          <TextInput style={styles.editInput} value={newCategory} onChangeText={setNewCategory} placeholder="e.g. Venue" placeholderTextColor="#B15D63" />
 
           <Text style={styles.editLabel}>Estimated cost (£)</Text>
           <TextInput style={styles.editInput} value={newEstimated} onChangeText={setNewEstimated} keyboardType="decimal-pad" />

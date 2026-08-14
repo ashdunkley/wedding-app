@@ -17,6 +17,7 @@ type PartyMember = {
 	name: string;
 	attending: boolean;
 	is_plus_one: boolean;
+	meal_choice: string | null;
 };
 type Guest = {
 	id: string;
@@ -25,8 +26,14 @@ type Guest = {
 	party_size: number;
 	email: string | null;
 	plus_one_allowed: boolean;
+	reception_invited: boolean;
+	reception_attending: boolean;
 	dietary_notes: string | null;
 	party_members: PartyMember[];
+};
+type MealOption = {
+	id: string;
+	name: string;
 };
 
 export default function GuestsScreen() {
@@ -54,6 +61,42 @@ export default function GuestsScreen() {
 	const [editPlusOneAllowed, setEditPlusOneAllowed] = useState(false);
 
 	const [newPlusOneAllowed, setNewPlusOneAllowed] = useState(false);
+
+	const [mealOptions, setMealOptions] = useState<MealOption[]>([]);
+	const [newReceptionInvited, setNewReceptionInvited] = useState(false);
+	const [editReceptionInvited, setEditReceptionInvited] = useState(false);
+	const [editReceptionAttending, setEditReceptionAttending] = useState(false);
+	const [editMealChoices, setEditMealChoices] = useState<
+		Record<string, string>
+	>({});
+
+	const receptionAttendees = (guests ?? [])
+		.filter((g) => g.reception_invited && g.reception_attending !== false)
+		.flatMap((g) => g.party_members.filter((m) => m.attending));
+	const mealCounts = mealOptions.map((opt) => ({
+		...opt,
+		count: receptionAttendees.filter((m) => m.meal_choice === opt.id).length,
+	}));
+	const mealNotChosenCount = receptionAttendees.filter(
+		(m) => !m.meal_choice,
+	).length;
+
+	const receptionInvitedGuests = (guests ?? []).filter(
+		(g) => g.reception_invited,
+	);
+	const receptionAttendingCount = receptionInvitedGuests
+		.filter((g) => g.rsvp_status === "yes" && g.reception_attending)
+		.reduce((sum, g) => sum + g.party_size, 0);
+	const receptionNotAttendingCount = receptionInvitedGuests
+		.filter(
+			(g) =>
+				g.rsvp_status === "no" ||
+				(g.rsvp_status === "yes" && !g.reception_attending),
+		)
+		.reduce((sum, g) => sum + g.party_size, 0);
+	const receptionPendingCount = receptionInvitedGuests
+		.filter((g) => g.rsvp_status === "pending")
+		.reduce((sum, g) => sum + g.party_size, 0);
 
 	const totalInvited = (guests ?? []).reduce((sum, g) => sum + g.party_size, 0);
 	const totalConfirmed = (guests ?? [])
@@ -84,6 +127,13 @@ export default function GuestsScreen() {
 			.order("created_at", { ascending: true });
 
 		setGuests(data ?? []);
+
+		const { data: meals } = await supabase
+			.from("meal_options")
+			.select("id, name")
+			.order("sort_order");
+
+		setMealOptions(meals ?? []);
 		setLoading(false);
 	}
 
@@ -111,6 +161,7 @@ export default function GuestsScreen() {
 				email: newEmail.trim() || null,
 				party_size: names.length,
 				plus_one_allowed: newPlusOneAllowed,
+				reception_invited: newReceptionInvited,
 			})
 			.select()
 			.single();
@@ -136,6 +187,7 @@ export default function GuestsScreen() {
 		setNewCode("");
 		setNewEmail("");
 		setNewPlusOneAllowed(false);
+		setNewReceptionInvited(false);
 		setShowAddForm(false);
 		load();
 	}
@@ -151,26 +203,44 @@ export default function GuestsScreen() {
 		setEditEmail(guest.email ?? "");
 		setEditDietary(guest.dietary_notes ?? "");
 		setEditPlusOneAllowed(guest.plus_one_allowed);
+		setEditReceptionInvited(guest.reception_invited);
+		setEditReceptionAttending(guest.reception_attending);
+		setEditMealChoices(
+			Object.fromEntries(
+				guest.party_members.map((m) => [m.id, m.meal_choice ?? ""]),
+			),
+		);
 
 		const plusOne = guest.party_members.find((m) => m.is_plus_one) ?? null;
 		setEditPlusOneMember(plusOne);
 		setEditPlusOneName(plusOne?.name ?? "");
 	}
 
-	async function handleSaveEdit(guestId: string) {
+	async function handleSaveEdit(guest: Guest) {
 		setSaving(true);
 		const names = editNames
 			.split(",")
 			.map((n) => n.trim())
 			.filter(Boolean);
 
+		// Meal choices are keyed by the current member id, which won't survive
+		// the delete/reinsert below, so carry them across by name instead.
+		const mealChoicesByName: Record<string, string> = {};
+		guest.party_members
+			.filter((m) => !m.is_plus_one)
+			.forEach((m) => {
+				if (editMealChoices[m.id]) mealChoicesByName[m.name] = editMealChoices[m.id];
+			});
+
 		const { error: guestError } = await supabase
 			.from("guests")
 			.update({
 				email: editEmail.trim() || null,
 				dietary_notes: editDietary.trim() || null,
+				reception_invited: editReceptionInvited,
+				reception_attending: editReceptionAttending,
 			})
-			.eq("id", guestId);
+			.eq("id", guest.id);
 
 		if (guestError) {
 			setSaving(false);
@@ -181,17 +251,26 @@ export default function GuestsScreen() {
 		await supabase
 			.from("party_members")
 			.delete()
-			.eq("guest_id", guestId)
+			.eq("guest_id", guest.id)
 			.eq("is_plus_one", false);
 		await supabase.from("party_members").insert(
 			names.map((name, i) => ({
-				guest_id: guestId,
+				guest_id: guest.id,
 				name,
 				sort_order: i,
 				is_plus_one: false,
 				attending: true,
+				meal_choice: mealChoicesByName[name] || null,
 			})),
 		);
+
+		const plusOne = guest.party_members.find((m) => m.is_plus_one);
+		if (plusOne && editMealChoices[plusOne.id] !== undefined) {
+			await supabase
+				.from("party_members")
+				.update({ meal_choice: editMealChoices[plusOne.id] || null })
+				.eq("id", plusOne.id);
+		}
 
 		setSaving(false);
 		setEditingId(null);
@@ -296,7 +375,26 @@ export default function GuestsScreen() {
 			<Text style={styles.subtitle}>
 				{guests.length} invited parties - {totalInvited} invited guests
 			</Text>
-			<Text style={styles.subtitle}>{totalConfirmed} attending guests - {totalDenied} not attending invitees</Text>
+			<Text style={styles.subtitle}>
+				{totalConfirmed} confirmed attending · {totalPending} pending ·{" "}
+				{totalDenied} not attending
+			</Text>
+			{mealOptions.length > 0 && (
+				<Text style={styles.subtitle}>
+					Meal counts:{" "}
+					{mealCounts
+						.map((opt) => `${opt.name}: ${opt.count}`)
+						.concat(`Not yet chosen: ${mealNotChosenCount}`)
+						.join(" · ")}
+				</Text>
+			)}
+			{receptionInvitedGuests.length > 0 && (
+				<Text style={styles.subtitle}>
+					Reception: {receptionAttendingCount} attending ·{" "}
+					{receptionNotAttendingCount} not attending ·{" "}
+					{receptionPendingCount} pending
+				</Text>
+			)}
 
 			{isEditor && (
 				<TouchableOpacity
@@ -342,6 +440,20 @@ export default function GuestsScreen() {
 								style={[
 									styles.toggleKnob,
 									newPlusOneAllowed && styles.toggleKnobOn,
+								]}
+							/>
+						</TouchableOpacity>
+					</View>
+					<View style={styles.plusOneToggleRow}>
+						<Text style={styles.editLabel}>Invited to reception</Text>
+						<TouchableOpacity
+							onPress={() => setNewReceptionInvited((prev) => !prev)}
+							style={[styles.toggle, newReceptionInvited && styles.toggleOn]}
+						>
+							<View
+								style={[
+									styles.toggleKnob,
+									newReceptionInvited && styles.toggleKnobOn,
 								]}
 							/>
 						</TouchableOpacity>
@@ -438,11 +550,96 @@ export default function GuestsScreen() {
 									</View>
 								</View>
 							)}
+							<View style={styles.plusOneToggleRow}>
+								<Text style={styles.editLabel}>Invited to reception</Text>
+								<TouchableOpacity
+									onPress={() => {
+										const next = !editReceptionInvited;
+										setEditReceptionInvited(next);
+										if (next && !guest.reception_invited) {
+											setEditReceptionAttending(false);
+										}
+									}}
+									style={[styles.toggle, editReceptionInvited && styles.toggleOn]}
+								>
+									<View
+										style={[
+											styles.toggleKnob,
+											editReceptionInvited && styles.toggleKnobOn,
+										]}
+									/>
+								</TouchableOpacity>
+							</View>
+
+							{editReceptionInvited && (
+								<View style={styles.plusOneToggleRow}>
+									<Text style={styles.editLabel}>Attending reception</Text>
+									<TouchableOpacity
+										onPress={() => setEditReceptionAttending((prev) => !prev)}
+										style={[
+											styles.toggle,
+											editReceptionAttending && styles.toggleOn,
+										]}
+									>
+										<View
+											style={[
+												styles.toggleKnob,
+												editReceptionAttending && styles.toggleKnobOn,
+											]}
+										/>
+									</TouchableOpacity>
+								</View>
+							)}
+
+							{editReceptionInvited &&
+								editReceptionAttending &&
+								mealOptions.length > 0 && (
+								<View style={styles.plusOneBox}>
+									<Text style={styles.editLabel}>Meal choices</Text>
+									{guest.party_members.map((m) => (
+										<View key={m.id} style={{ marginBottom: 10 }}>
+											<Text style={[styles.editLabel, { marginTop: 0 }]}>{m.name}</Text>
+											<View
+												style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}
+											>
+												{mealOptions.map((meal) => {
+													const selected = editMealChoices[m.id] === meal.id;
+													return (
+														<TouchableOpacity
+															key={meal.id}
+															onPress={() =>
+																setEditMealChoices((prev) => ({
+																	...prev,
+																	[m.id]: selected ? "" : meal.id,
+																}))
+															}
+															style={[
+																styles.mealChip,
+																selected && styles.mealChipSelected,
+															]}
+														>
+															<Text
+																style={
+																	selected
+																		? styles.mealChipTextSelected
+																		: styles.mealChipText
+																}
+															>
+																{meal.name}
+															</Text>
+														</TouchableOpacity>
+													);
+												})}
+											</View>
+										</View>
+									))}
+								</View>
+							)}
 						</View>
 						<View style={styles.editButtonRow}>
 							<TouchableOpacity
 								style={styles.saveButton}
-								onPress={() => handleSaveEdit(guest.id)}
+								onPress={() => handleSaveEdit(guest)}
 								disabled={saving}
 							>
 								<Text style={styles.saveButtonText}>
@@ -491,9 +688,36 @@ export default function GuestsScreen() {
 									value={guest.plus_one_allowed ? "Yes" : "No"}
 								/>
 								<DetailLine
+									label="Invited to reception"
+									value={guest.reception_invited ? "Yes" : "No"}
+								/>
+								{guest.reception_invited && (
+									<DetailLine
+										label="Attending reception"
+										value={guest.reception_attending ? "Yes" : "No"}
+									/>
+								)}
+								<DetailLine
 									label="Dietary notes"
 									value={guest.dietary_notes ?? "—"}
 								/>
+								{guest.reception_invited &&
+									guest.reception_attending &&
+									guest.party_members.some((m) => m.meal_choice) && (
+										<DetailLine
+											label="Meal choices"
+											value={guest.party_members
+												.filter((m) => m.meal_choice)
+												.map(
+													(m) =>
+														`${m.name}: ${
+															mealOptions.find((opt) => opt.id === m.meal_choice)
+																?.name ?? "—"
+														}`,
+												)
+												.join(", ")}
+										/>
+									)}
 								{isEditor && (
 									<View style={styles.editButtonRow}>
 										<TouchableOpacity onPress={() => startEdit(guest)}>
@@ -711,4 +935,18 @@ const styles = StyleSheet.create({
 		paddingVertical: 8,
 		paddingHorizontal: 16,
 	},
+	mealChip: {
+		borderWidth: 1,
+		borderColor: "#F0C4CB",
+		borderRadius: 999,
+		paddingVertical: 6,
+		paddingHorizontal: 14,
+		backgroundColor: "#FDF8F5",
+	},
+	mealChipSelected: {
+		backgroundColor: "#4A5D45",
+		borderColor: "#4A5D45",
+	},
+	mealChipText: { fontSize: 13, color: "#3D0F14" },
+	mealChipTextSelected: { fontSize: 13, color: "white", fontWeight: "600" },
 });
