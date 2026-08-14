@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "397871083697",
+    "project_id": "wedding-app-ed646",
+    "storage_bucket": "wedding-app-ed646.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:397871083697:android:f80374c593f74007ce3290",
+        "android_client_info": {
+          "package_name": "uk.co.mrandmrsdunkley.weddingapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDQ0zHAcTvNad3ICaN4tfig3OeR821rho8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

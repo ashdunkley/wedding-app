@@ -10,6 +10,7 @@ import { router } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import { getSession } from "../../lib/session";
 import { Link } from "expo-router";
+import { checkForUpdate } from "../../lib/versionCheck";
 
 export default function DashboardScreen() {
 	const [name, setName] = useState("");
@@ -41,6 +42,8 @@ export default function DashboardScreen() {
 			return;
 		}
 		setName(session.name);
+
+		checkForUpdate();
 
 		const { data: guests } = await supabase
 			.from("guests")

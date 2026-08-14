@@ -11,6 +11,8 @@
 			"supportsTablet": true
 		},
 		"android": {
+			"versionCode": 1,
+			"googleServicesFile": "./google-services.json",
 			"package": "uk.co.mrandmrsdunkley.weddingapp",
 			"adaptiveIcon": {
 				"backgroundColor": "#E6F4FE",
